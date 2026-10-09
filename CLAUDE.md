@@ -4,7 +4,7 @@
 
 ## 1. Goal
 
-Build a sideloaded iOS app that scans an **empty house** with Apple **RoomPlan** on an **iPhone 12 Pro (LiDAR)**, plus a **Python post-processor on Windows**. Together they produce:
+Build a sideloaded iOS app that scans an **empty house** with Apple **RoomPlan** on an **iPhone 12 Pro (LiDAR)**, plus a **Python post-processor on Linux**. Together they produce:
 
 1. A **dimensionally accurate 2D floorplan**:
    - DXF for CAD.
@@ -18,11 +18,11 @@ The scan is a **one-time job**, so robustness and data capture matter more than 
 
 | Constraint | Implication |
 |---|---|
-| Dev machine is **Windows 11**; no Mac. | Swift cannot be compiled locally. **All iOS builds run on GitHub Actions macOS runners.** |
-| Install path is **Sideloadly** (Windows) with a **free Apple ID**. | CI must output an **unsigned `.ipa`**. Sideloadly re-signs it; it expires after 7 days. The phone needs Developer Mode on. |
-| Xcode project files can't be hand-edited safely from Windows. | Use **XcodeGen** (`project.yml`). Generate the `.xcodeproj` in CI; never commit it. |
+| Dev machine is **Linux (Debian 12)**; no Mac. | Swift cannot be compiled locally. **All iOS builds run on GitHub Actions macOS runners.** |
+| Install path is **Impactor** (Linux, Flathub; fallback: Dadoum/Sideloader) with a **free Apple ID**, over USB via `usbmuxd`. | CI must output an **unsigned `.ipa`**. The sideload tool re-signs it; it expires after 7 days (reinstalling over it keeps app data; deleting the app erases it). The phone needs Developer Mode on. Optional: SideStore for on-device refresh. |
+| Xcode project files can't be hand-edited safely without Xcode. | Use **XcodeGen** (`project.yml`). Generate the `.xcodeproj` in CI; never commit it. |
 | Device: iPhone 12 Pro. | Deployment target **iOS 17.0**, required for multi-room `StructureBuilder`, `CapturedRoom.floors`, and `sections`. Check `RoomCaptureSession.isSupported` at launch. |
-| Files must be retrievable on Windows. | Enable Files-app visibility (`UIFileSharingEnabled`, `LSSupportsOpeningDocumentsInPlace`) and provide a share sheet so exports can be AirDropped or emailed. |
+| Files must be retrievable on Linux. | Enable Files-app visibility (`UIFileSharingEnabled`, `LSSupportsOpeningDocumentsInPlace`) and provide a share sheet. **AirDrop doesn't reach Linux**: retrieve via USB (`ifuse --documents <bundle-id>`, libimobiledevice), or share the zip by email/cloud/LocalSend. |
 
 **Claude Code cannot run or compile Swift in this environment. The CI build is the compiler.** Keep changes small, push often, and read CI logs to fix errors. Python tooling *can* be run and tested locally.
 
@@ -39,7 +39,7 @@ housescan/
 │  │  ├─ Export/                 # USDZ, raw JSON, simplified schema JSON
 │  │  ├─ UI/                     # SwiftUI screens
 │  │  └─ Info.plist
-├─ tools/                        # Python 3.11+, runs on Windows
+├─ tools/                        # Python 3.10+, runs on Linux
 │  ├─ pyproject.toml
 │  ├─ housescan/
 │  │  ├─ schema.py               # load/validate simplified JSON
@@ -118,7 +118,7 @@ Notes:
 - Prefer the **merged `CapturedStructure`** geometry for `scan.json`, so rooms share one frame. Fall back to per-room data if merging failed.
 - Use UUIDs from RoomPlan surface `identifier`s for stable IDs.
 
-## 6. Python tools (Windows, locally testable)
+## 6. Python tools (Linux, locally testable)
 
 Dependencies: `numpy`, `shapely`, `ezdxf`, `svgwrite` (or plain string templating), `pytest`.
 
@@ -156,14 +156,14 @@ CLI: `python -m housescan <scan.json> --out out/ [--measurements measurements.js
   2. `xcodebuild -project HouseScan.xcodeproj -scheme HouseScan -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -archivePath build/HouseScan.xcarchive archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""`
   3. Package: `mkdir Payload && cp -r build/HouseScan.xcarchive/Products/Applications/HouseScan.app Payload/ && zip -r HouseScan.ipa Payload`
   4. `actions/upload-artifact` → `HouseScan.ipa`.
-- Separate job (ubuntu or windows): `pytest tools/`.
+- Separate job (ubuntu): `pytest tools/`.
 - macOS runner minutes are billed at a premium on private repos. Use a public repo, or keep pushes batched.
 
 ## 8. Info.plist / project.yml essentials
 - `NSCameraUsageDescription`: "Used to scan rooms with LiDAR."
 - `UIFileSharingEnabled` = YES and `LSSupportsOpeningDocumentsInPlace` = YES.
 - `UIRequiredDeviceCapabilities`: `arkit`.
-- Bundle ID: unique reverse-DNS (e.g. `local.<user>.housescan`). Sideloadly may rewrite it.
+- Bundle ID: unique reverse-DNS (e.g. `local.<user>.housescan`). The sideload tool may rewrite it.
 - Frameworks: `RoomPlan`, `ARKit`, `RealityKit`.
 - Portrait-only is fine.
 
@@ -171,7 +171,7 @@ CLI: `python -m housescan <scan.json> --out out/ [--measurements measurements.js
 
 | Phase | Deliverable | Done when |
 |---|---|---|
-| **0** | XcodeGen skeleton + CI producing an `.ipa` from a "Hello" SwiftUI app | Artifact downloads, installs via Sideloadly, launches on device |
+| **0** | XcodeGen skeleton + CI producing an `.ipa` from a "Hello" SwiftUI app | Artifact downloads, installs via Impactor, launches on device |
 | **1** | Single-room capture + raw JSON + USDZ export + share sheet | A room scans and the files appear in the Files app on the iPhone |
 | **2** | Multi-room shared ARSession + `StructureBuilder` merge + room naming + `scan.json` + `meta.json` | Two adjacent rooms export into one frame; their shared wall lines up within ~3 cm |
 | **3** | Python: schema, geometry, DXF, SVG, report + pytest on the fixture | `pytest` green; DXF opens in a free CAD viewer; SVG renders in a browser |
