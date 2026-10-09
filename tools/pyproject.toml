@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "housescan"
+version = "0.1.0"
+description = "Post-process HouseScan (RoomPlan) exports into DXF, SVG and OBJ."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "shapely>=2.0",
+    "ezdxf>=1.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+include = ["housescan*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

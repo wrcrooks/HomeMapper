@@ -1,0 +1,74 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  ios:
+    name: iOS unsigned .ipa
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode
+        run: xcodebuild -version && xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Archive (unsigned)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild \
+            -project HouseScan.xcodeproj \
+            -scheme HouseScan \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/HouseScan.xcarchive \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            | tee build/xcodebuild.log
+
+      - name: Package .ipa
+        working-directory: ios
+        run: |
+          mkdir Payload
+          cp -r build/HouseScan.xcarchive/Products/Applications/HouseScan.app Payload/
+          zip -qr HouseScan.ipa Payload
+          ls -l HouseScan.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HouseScan.ipa
+          path: ios/HouseScan.ipa
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: xcodebuild-log
+          path: ios/build/xcodebuild.log
+
+  tools:
+    name: Python tools (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: pip install -e "tools[dev]"
+      - name: Test
+        run: pytest tools
